@@ -1,0 +1,130 @@
+Practical Machine Learning Assignment
+============================
+
+### Setting up libraries and getting the data
+
+```{r message=FALSE,warning=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+```
+
+First, we need to download the files to be analysed: train and test datasets.
+
+```{r message=FALSE,warning=FALSE}
+#Downloading the files
+download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",destfile="~/Dropbox/Coursera/Data_Science_Specialization/RCoding/coursera/course8_assignment/training.csv",method="libcurl")
+download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",destfile="~/Dropbox/Coursera/Data_Science_Specialization/RCoding/coursera/course8_assignment/testing.csv",method="libcurl")
+```
+
+Then, I need to put them in memory to model.
+
+```{r message=FALSE,warning=FALSE}
+#Reading the downloaded files
+training <- read.csv("~/Dropbox/Coursera/Data_Science_Specialization/RCoding/coursera/course8_assignment/training.csv", na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv("~/Dropbox/Coursera/Data_Science_Specialization/RCoding/coursera/course8_assignment/testing.csv", na.strings=c("NA","#DIV/0!",""))
+```
+
+### Partitionig and cleaning the data
+
+Because the final prediction exercise is on the 20 samples in the test dataset, we need to train the model solely on the train dataset. So, we'll divide the data 70% for the training dataset and 30% for the test dataset (this test is part of the original training dataset).
+
+```{r message=FALSE,warning=FALSE}
+inTrain <- createDataPartition(y=training$classe, p=0.7, list=FALSE)
+tTraining <- training[inTrain, ]
+tTesting <- training[-inTrain, ]
+print("Dimensions of the tTraining dataset")
+dim(tTraining)
+print("Dimensions of the tTesting dataset")
+dim(tTesting)
+```
+
+Now let's do some cleaning. First, I'll use the function NearZeroVar to find "predictors that have one unique value or that have very few unique values relative to the number of samples and the ratio of the frequency of the most common value to the frequency of the second most common value is large".
+
+```{r message=FALSE,warning=FALSE}
+NZV <- nearZeroVar(tTraining, saveMetrics=TRUE)
+NZV <- names(tTraining) %in% c("new_window", "kurtosis_roll_belt", "kurtosis_picth_belt","kurtosis_yaw_belt", "skewness_roll_belt", "skewness_roll_belt.1", "skewness_yaw_belt","max_yaw_belt", "min_yaw_belt", "amplitude_yaw_belt", "avg_roll_arm", "stddev_roll_arm","var_roll_arm", "avg_pitch_arm", "stddev_pitch_arm", "var_pitch_arm", "avg_yaw_arm","stddev_yaw_arm", "var_yaw_arm", "kurtosis_roll_arm", "kurtosis_picth_arm","kurtosis_yaw_arm", "skewness_roll_arm", "skewness_pitch_arm", "skewness_yaw_arm","max_roll_arm", "min_roll_arm", "min_pitch_arm", "amplitude_roll_arm", "amplitude_pitch_arm","kurtosis_roll_dumbbell", "kurtosis_picth_dumbbell", "kurtosis_yaw_dumbbell", "skewness_roll_dumbbell","skewness_pitch_dumbbell", "skewness_yaw_dumbbell", "max_yaw_dumbbell", "min_yaw_dumbbell","amplitude_yaw_dumbbell", "kurtosis_roll_forearm", "kurtosis_picth_forearm", "kurtosis_yaw_forearm","skewness_roll_forearm", "skewness_pitch_forearm", "skewness_yaw_forearm", "max_roll_forearm","max_yaw_forearm", "min_roll_forearm", "min_yaw_forearm", "amplitude_roll_forearm","amplitude_yaw_forearm", "avg_roll_forearm", "stddev_roll_forearm", "var_roll_forearm","avg_pitch_forearm", "stddev_pitch_forearm", "var_pitch_forearm", "avg_yaw_forearm","stddev_yaw_forearm", "var_yaw_forearm")
+tTraining <- tTraining[!NZV]
+dim(tTraining)
+```
+
+With this, we leave behind 60 variables.
+
+Now, I'll remove the first ID variable so that it does not interfer with the ML Algorithms.
+
+```{r message=FALSE,warning=FALSE}
+tTraining <- tTraining[c(-1)]
+```
+
+I also need to check for NAs. I'll do a for loop that checks if the variables have more than 60% of NAs of total observations.
+
+```{r message=FALSE,warning=FALSE}
+trainingNA <- tTraining
+for(i in 1:length(tTraining)) {
+        if( sum( is.na( tTraining[, i] ) ) /nrow(tTraining) >= .6 ) {
+        for(j in 1:length(trainingNA)) {
+            if( length( grep(names(tTraining[i]), names(trainingNA)[j]) ) ==1)  {trainingNA <- trainingNA[ , -j]}   
+        } 
+    }
+}
+dim(trainingNA)
+tTraining <- trainingNA
+rm(trainingNA)
+```
+
+One more variable is down now that we have looked into NAs.
+Now, I'll do the same three step procedure with the other two datasets: tTesting and testing. 
+
+```{r message=FALSE,warning=FALSE}
+subset1 <- colnames(tTraining)
+subset2 <- colnames(tTraining[, -58])
+tTesting <- tTesting[subset1]
+testing <- testing[subset2]
+dim(tTesting)
+dim(testing)
+```
+
+Now, finally let's transform every variable to be the same type.
+
+```{r message=FALSE,warning=FALSE}
+for (i in 1:length(testing) ) {
+        for(j in 1:length(tTraining)) {
+        if( length( grep(names(tTraining[i]), names(testing)[j]) ) ==1)  {
+            class(testing[j]) <- class(tTraining[i])
+        }      
+    }      
+}
+testing <- rbind(tTraining[2, -58] , testing)
+testing <- testing[-1,]
+```
+
+### Choosing between different models
+
+Since I'm dealing wth a multivariate classification problem, I'll try the **Decision tree algorithm** first, even though I know it's not a very powerful one.
+
+```{r message=FALSE,warning=FALSE,fig.align="center",fig.height=8,fig.width=10}
+modDT <- rpart(classe ~ ., data=tTraining, method="class")
+fancyRpartPlot(modDT)
+```
+
+Plotted the tree with the rattle package just so I could analyse the leaves.
+
+```{r message=FALSE,warning=FALSE}
+predDT <- predict(modDT, tTesting, type = "class")
+confusionMatrix(predDT, tTesting$classe)$overall
+```
+
+Now, on to the **Random Forest algorithm**, that usually has a better performance.
+
+```{r message=FALSE,warning=FALSE}
+modRF <- randomForest(classe ~. , data=tTraining)
+predRF <- predict(modRF, tTesting, type = "class")
+confusionMatrix(predRF, tTesting$classe)$overall
+```
+
+So, as the random forest yields better results, I'll stick with it to predict on the test samples. 
+
+Both accuracy and Kappa metrics are better than the Decision Tree algorithm. 
